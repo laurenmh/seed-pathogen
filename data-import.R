@@ -41,10 +41,10 @@ rm(fpath)
 clch <- gs_title("Black box cleist/chas/fesroe dataset")
 
 # get the datasheet
-cleis <- gs_read(ss=clch, skip=0)
+fes_clch <- gs_read(ss=clch, skip=0)
 
 # convert to data.frame
-cleis <- as.data.frame(cleis)
+fes_clch <- as.data.frame(fes_clch)
 
 rm(clch)
 
