@@ -62,3 +62,28 @@ dan_pa <- as.data.frame(dan_pa)
 
 rm(dcpa)
 
+
+# Danthonia seed data -----------------------------------------------------
+
+dcsd <- gs_title("Dan_Cal_Seeds_2018_Seed data")
+
+# get the data sheet
+dan_seed <- gs_read(ss=dcsd, skip=0)
+
+# convert to data.frame
+dan_seed <- as.data.frame(dan_seed)
+
+rm(dcsd)
+
+
+# Festuca seed data -------------------------------------------------------
+
+frsd <- gs_title("FES ROE Seeds")
+
+# get the data sheet
+fes_seed <- gs_read(ss=frsd, skip=0)
+
+# convert to data.frame
+fes_seed <- as.data.frame(fes_seed)
+
+rm(frsd)
