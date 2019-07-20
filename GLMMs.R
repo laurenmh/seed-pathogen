@@ -4,6 +4,9 @@
 library(corrplot)
 library(lme4)
 library(car)
+library(tidyverse)
+library(lavaan)
+
 
 ####################################### Start with Festuca
 Fsite<-read.csv('Data/FesRoe Site data.csv')
@@ -31,7 +34,7 @@ loadings(Fpca)
 
 ###### Merge climate PCs into performance data set
 # First make the population names consistent
-unique(Fdat$SiteName)%in%unique(Fsite$?..SiteName) # not all the same
+unique(Fdat$SiteName)%in%unique(Fsite$SiteName) # not all the same
 unique(Fdat$SiteName)
 # Fill in missing site names
 Fdat[which(Fdat$SiteName==''),]
@@ -43,15 +46,17 @@ Fdat$SiteName[Fdat$SiteName=='Hazel Dell Upper']<-"Hazel Dell-upper"
 Fdat$SiteName[Fdat$SiteName=='Whidby Island']<-"Whidbey Island"
 unique(Fdat$SiteName)%in%unique(Fsite$SiteName) # not all the same
 # now merge datasets
-Fdat<-merge(Fdat,Fsite,by.x=c('SiteName'),by.y=c('?..SiteName'))
+Fdat<-merge(Fdat,Fsite,by=c('SiteName')) %>%
+  mutate(PathogenRichness = Nr..kinds,
+         Germ = Germ.)
 
 ###### Fit germination models
 # germination as a function of climate PCs and plant density, with mom nested within pop as random effects
-Fgerm<-glmer(Germ.~PC1+PC2+PC3+PlantDensity+(1|SiteName/SiteInd),family='binomial',data=Fdat,control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+Fgerm<-glmer(Germ.~PC1+PC2+PC3+PlantDensity +(1|SiteName/SiteInd),family='binomial',data=Fdat,control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
 summary(Fgerm)
 # there is no variance explained by site after accounting for climate effects
 # this is generating the 'singular fit' warning
-Fgerm2<-glmer(Germ.~PC1+PC2+PC3+PlantDensity+(1|SiteInd),family='binomial',data=Fdat,control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+Fgerm2<-glmer(Germ.~PC1+PC2+PC3+PlantDensity +(1|SiteInd),family='binomial',data=Fdat,control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
 anova(Fgerm,Fgerm2)
 # the likelihood ratio test confirms that there is no support for including a random effect of site
 Fgerm3<-glm(Germ.~PC1+PC2+PC3+PlantDensity,family='binomial',data=Fdat)
@@ -62,6 +67,49 @@ as.data.frame(VarCorr(Fgerm2)) # 2.277 is the variance in germination due to mom
 # there is a significant effect of the first two climate PCs, but not the third or plant density
 # germination decreases with increasing PC1 (wetter and colder Tmin and Tmean)
 # germination increases with increasing PC2 (higher soil N and VPDmin and colder Tmean)
+
+
+##### Fit as an SEM
+## a mess, figuring out the data structure
+
+myvar<-c("SiteName", "Region", "SiteInd", "GreenScale", "Germ", "PC1", "PC2", "PC3", "PlantDensity")
+
+mydat <- Fdat[myvar]
+
+mydat2 <- aggregate(.~SiteName + SiteInd, data=mydat, base::mean)
+
+mydat3 <- aggregate(.~SiteName, data=mydat, base::mean)
+
+l <- lm(PlantDensity ~ PC1 + PC2, data = mydat3)
+summary(l)
+
+
+model<-'
+Germ~PC1 +  PC2 + PlantDensity  
+PlantDensity ~ PC1 + PC2 
+'
+
+fita <- sem(model,std.ov=T,missing="ml", data=mydat3, cluster = "SiteName")
+summary(fita, fit.measures=TRUE,rsquare=T) 
+
+ggplot(mydat3, aes(x=PC2, y=PlantDensity)) + geom_point()
+
+# actually there aren't multi-level measurements, just response at one and explanatory at others... 
+# model <- '
+# level: 1
+# 
+# level: 2
+# Germ~  PC1 + PC2 + PlantDensity 
+# 
+# PlantDensity ~ PC1 + PC2
+# 
+# '
+# 
+# 
+# fit <- sem(model,std.ov=T,missing="ml", data=mydat2, cluster = "SiteName")#this uses robust chi square, which I've read is good and conservative 
+# summary(fit, fit.measures=TRUE,rsquare=T) 
+
+
 
 ###### Fit pathogen richness models
 hist(Fdat$Nr..kinds) # model as poisson distributed
