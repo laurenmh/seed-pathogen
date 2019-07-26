@@ -72,21 +72,59 @@ as.data.frame(VarCorr(Fgerm2)) # 2.277 is the variance in germination due to mom
 ##### Fit as an SEM
 ## a mess, figuring out the data structure
 
-myvar<-c("SiteName", "Region", "SiteInd", "GreenScale", "Germ", "PC1", "PC2", "PC3", "PlantDensity")
+myvar<-c("SiteName", "Region", "SiteInd", "GreenScale", "Germ", "PC1", "PC2", "PC3", "PlantDensity", "PathogenRichness")
 
-mydat <- Fdat[myvar]
+Fdat2 <- Fdat[myvar] %>%
+  tbl_df() %>%
+  group_by(SiteName, SiteInd) %>%
+  mutate(avgRich = mean(PathogenRichness, na.rm = T)) %>%
+  mutate(perGerm = sum(Germ)/n()) %>%
+  tbl_df()
 
-mydat2 <- aggregate(.~SiteName + SiteInd, data=mydat, base::mean)
+###### Fit germination models
+# germination as a function of climate PCs and plant density, with mom nested within pop as random effects
+Fgerm<-glmer(Germ~PC1+PC2+PC3+PlantDensity + avgRich +(1|SiteName/SiteInd),family='binomial',data=Fdat2,control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+summary(Fgerm)
+# there is no variance explained by site after accounting for climate effects
+# this is generating the 'singular fit' warning
+Fgerm2<-glmer(Germ~PC1+PC2+PC3+PlantDensity + avgRich +(1|SiteInd),family='binomial',data=Fdat2,control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+anova(Fgerm,Fgerm2)
+# the likelihood ratio test confirms that there is no support for including a random effect of site
+Fgerm3<-glm(Germ~PC1+PC2+PC3+PlantDensity + avgRich ,family='binomial',data=Fdat2)
+anova(Fgerm2,Fgerm3)
+# however, the random effect of mom is highly significant, strong support for variation among moms in germination success
+summary(Fgerm2)
+as.data.frame(VarCorr(Fgerm2)) # 2.277 is the variance in germination due to moms
+# there is a significant effect of the first two climate PCs, but not the third or plant density
+# germination decreases with increasing PC1 (wetter and colder Tmin and Tmean)
+# germination increases with increasing PC2 (higher soil N and VPDmin and colder Tmean)
+
+Frich <-lmer(avgRich~PC1+PC2+PlantDensity +(1|SiteName),data=mydat2)
+summary(Frich)
+ggplot(mydat2, aes(x=PC1, y =avgRich)) + geom_point() + geom_smooth()
+
+mydat2 <- aggregate(.~SiteName + SiteInd, data=mydat, base::mean) %>%
+  tbl_df()
+
+ggplot(mydat2, aes(x=perGerm, y=PlantDensity)) + geom_point() + geom_smooth(se = F, method = lm)
+ggplot(mydat2, aes(y=perGerm, x=PathogenRichness)) + geom_point() + geom_smooth(se = F, method = lm)
+ggplot(mydat2, aes(y=perGerm, x=PC1)) + geom_point() + geom_smooth(se = F, method = lm)
+ggplot(mydat2, aes(y=perGerm, x=PC2)) + geom_point() + geom_smooth(se = F, method = lm)
+ggplot(mydat2, aes(x=PlantDensity, y=PC1)) + geom_point() + geom_smooth(se = F, method = lm)
+ggplot(mydat2, aes(y=avgRich, x=PC2)) + geom_point() + geom_smooth(se = F, method = lm)
+ggplot(mydat2, aes(y=avgRich, x=PC1)) + geom_point() + geom_smooth(se = F, method = lm)
+
 
 mydat3 <- aggregate(.~SiteName, data=mydat, base::mean)
 
-l <- lm(PlantDensity ~ PC1 + PC2, data = mydat3)
+l <- lm(Germ ~ PC1 + PC2, data = mydat2)
 summary(l)
 
 
 model<-'
-Germ~PC1 +  PC2 + PlantDensity  
-PlantDensity ~ PC1 + PC2 
+perGerm ~PC1 +  PC2 + PlantDensity+ avgRich
+avgRich ~ PC1 + PC2 + PlantDensity
+PlantDensity ~ PC1 + PC2
 '
 
 fita <- sem(model,std.ov=T,missing="ml", data=mydat3, cluster = "SiteName")
@@ -94,22 +132,68 @@ summary(fita, fit.measures=TRUE,rsquare=T)
 
 ggplot(mydat3, aes(x=PC2, y=PlantDensity)) + geom_point()
 
-# actually there aren't multi-level measurements, just response at one and explanatory at others... 
-# model <- '
-# level: 1
-# 
-# level: 2
-# Germ~  PC1 + PC2 + PlantDensity 
-# 
-# PlantDensity ~ PC1 + PC2
-# 
-# '
-# 
-# 
-# fit <- sem(model,std.ov=T,missing="ml", data=mydat2, cluster = "SiteName")#this uses robust chi square, which I've read is good and conservative 
-# summary(fit, fit.measures=TRUE,rsquare=T) 
+model <- '
+level: 1
+perGerm ~ avgRich
+
+level: 2
+perGerm~  PC1 + PC2 + PlantDensity
+PlantDensity ~ PC1 + PC2
+avgRich ~ PC1 + PC2
+PlantDensity ~~ avgRich
+'
+
+model <- '
+perGerm ~ avgRich + PC1 + PC2 + PlantDensity
+PlantDensity ~ PC1 + PC2
+avgRich ~ PC1 + PC2
+PlantDensity ~~ avgRich
+'
 
 
+
+model <- '
+level: 1
+Germ ~ avgRich
+
+level: 2
+Germ~  PC1 + PC2 + PlantDensity
+avgRich ~ PC1 + PC2 + PlantDensity
+'
+
+
+model <- '
+perGerm ~ avgRich + PC1 + PlantDensity
+avgRich ~ PC1 + PlantDensity
+'
+
+
+
+model <- '
+level: 1
+perGerm ~ avgRich + PC1 + PC2 + PlantDensity
+avgRich ~ PC1 + PC2 + PlantDensity
+
+level: 2
+PlantDensity ~ PC1 + PC2
+'
+
+fit1 <- sem(model,std.ov=T,missing="ml", data=mydat2, cluster = "SiteName") #this uses robust chi square, which I've read is good and conservative
+summary(fit1, fit.measures=TRUE,rsquare=T)
+
+
+model <- '
+perGerm ~ avgRich + PC1 + PC2 + PlantDensity
+avgRich ~ PC1 + PC2 
+PlantDensity ~ PC1 + PC2
+'
+
+fit1 <- sem(model,std.ov=T,missing="ml", data=mydat3) #this uses robust chi square, which I've read is good and conservative
+summary(fit1, fit.measures=TRUE,rsquare=T)
+
+
+l <- lm(avgRich ~ PlantDensity, data = mydat3)
+summary(l)
 
 ###### Fit pathogen richness models
 hist(Fdat$Nr..kinds) # model as poisson distributed
